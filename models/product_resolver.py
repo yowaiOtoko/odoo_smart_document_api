@@ -8,6 +8,15 @@ _logger = logging.getLogger(__name__)
 class ProductResolver(models.AbstractModel):
     _name = 'invoice_api.product_resolver'
     _description = 'Product resolver using FTS + trigram (v1.1)'
+    _pg_trgm_available = None
+
+    def _trigram_available(self):
+        if ProductResolver._pg_trgm_available is None:
+            self.env.cr.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')"
+            )
+            ProductResolver._pg_trgm_available = self.env.cr.fetchone()[0]
+        return ProductResolver._pg_trgm_available
 
     def _get_default_uom(self):
         Product = self.env['product.product'].with_context(active_test=True)
@@ -58,38 +67,68 @@ class ProductResolver(models.AbstractModel):
                 'action': cached.get('action', 'exact'),
             }
 
-        sql = """
-            SELECT id,
-                   ts_rank(
-                       to_tsvector('french', name),
-                       plainto_tsquery('french', %s)
-                   )            AS fts_score,
-                   similarity(name, %s) AS trigram_score
-            FROM product_template
-            WHERE active = true
-              AND company_id IN (%s, NULL)
-              AND (
-                    to_tsvector('french', name)
-                    @@ plainto_tsquery('french', %s)
-                 OR similarity(name, %s) > 0.2
-              )
-            ORDER BY (0.6 * ts_rank(
-                          to_tsvector('french', name),
-                          plainto_tsquery('french', %s)
-                     )
-                     + 0.4 * similarity(name, %s)) DESC
-            LIMIT 1
-        """
-
-        params = (
-            query,
-            query,
-            company_id,
-            query,
-            query,
-            query,
-            query,
-        )
+        if self._trigram_available():
+            sql = """
+                SELECT id,
+                       ts_rank(
+                           to_tsvector('french', name),
+                           plainto_tsquery('french', %s)
+                       )            AS fts_score,
+                       similarity(name, %s) AS trigram_score
+                FROM product_template
+                WHERE active = true
+                  AND company_id IN (%s, NULL)
+                  AND (
+                        to_tsvector('french', name)
+                        @@ plainto_tsquery('french', %s)
+                     OR similarity(name, %s) > 0.2
+                  )
+                ORDER BY (0.6 * ts_rank(
+                              to_tsvector('french', name),
+                              plainto_tsquery('french', %s)
+                         )
+                         + 0.4 * similarity(name, %s)) DESC
+                LIMIT 1
+            """
+            params = (
+                query,
+                query,
+                company_id,
+                query,
+                query,
+                query,
+                query,
+            )
+        else:
+            sql = """
+                SELECT id,
+                       ts_rank(
+                           to_tsvector('french', name),
+                           plainto_tsquery('french', %s)
+                       ) AS fts_score,
+                       0.0 AS trigram_score
+                FROM product_template
+                WHERE active = true
+                  AND company_id IN (%s, NULL)
+                  AND (
+                        to_tsvector('french', name)
+                        @@ plainto_tsquery('french', %s)
+                     OR name ILIKE %s
+                  )
+                ORDER BY ts_rank(
+                             to_tsvector('french', name),
+                             plainto_tsquery('french', %s)
+                         ) DESC
+                LIMIT 1
+            """
+            ilike_pattern = f'%{query}%'
+            params = (
+                query,
+                company_id,
+                query,
+                ilike_pattern,
+                query,
+            )
 
         self.env.cr.execute(sql, params)
         row = self.env.cr.fetchone()
