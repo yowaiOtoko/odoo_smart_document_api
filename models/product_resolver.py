@@ -71,23 +71,23 @@ class ProductResolver(models.AbstractModel):
             sql = """
                 SELECT id,
                        ts_rank(
-                           to_tsvector('french', name),
+                           to_tsvector('french', name::text),
                            plainto_tsquery('french', %s)
                        )            AS fts_score,
-                       similarity(name, %s) AS trigram_score
+                       similarity(name::text, %s) AS trigram_score
                 FROM product_template
                 WHERE active = true
                   AND company_id IN (%s, NULL)
                   AND (
-                        to_tsvector('french', name)
+                        to_tsvector('french', name::text)
                         @@ plainto_tsquery('french', %s)
-                     OR similarity(name, %s) > 0.2
+                     OR similarity(name::text, %s) > 0.2
                   )
                 ORDER BY (0.6 * ts_rank(
-                              to_tsvector('french', name),
+                              to_tsvector('french', name::text),
                               plainto_tsquery('french', %s)
                          )
-                         + 0.4 * similarity(name, %s)) DESC
+                         + 0.4 * similarity(name::text, %s)) DESC
                 LIMIT 1
             """
             params = (
@@ -103,7 +103,7 @@ class ProductResolver(models.AbstractModel):
             sql = """
                 SELECT id,
                        ts_rank(
-                           to_tsvector('french', name),
+                           to_tsvector('french', name::text),
                            plainto_tsquery('french', %s)
                        ) AS fts_score,
                        0.0 AS trigram_score
@@ -111,12 +111,12 @@ class ProductResolver(models.AbstractModel):
                 WHERE active = true
                   AND company_id IN (%s, NULL)
                   AND (
-                        to_tsvector('french', name)
+                        to_tsvector('french', name::text)
                         @@ plainto_tsquery('french', %s)
-                     OR name ILIKE %s
+                     OR name::text ILIKE %s
                   )
                 ORDER BY ts_rank(
-                             to_tsvector('french', name),
+                             to_tsvector('french', name::text),
                              plainto_tsquery('french', %s)
                          ) DESC
                 LIMIT 1
