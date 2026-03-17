@@ -8,7 +8,7 @@ class InvoiceAPIController(http.Controller):
         price = item.get('price_unit', item.get('price'))
         if 'product_id' in item:
             return {'product_id': item['product_id'], 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
-        return {'product_name': item.get('name', item.get('product_name')), 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'detailed_type': item.get('detailed_type', 'service'), 'name': item.get('name'), 'description': item.get('description')}
+        return {'product_name': item.get('name', item.get('product_name')), 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
 
     @http.route(
         '/api/invoice',
@@ -90,7 +90,6 @@ class InvoiceAPIController(http.Controller):
                 try:
                     product = request.env['product.product'].create({
                         'name': 'API Status Test Product',
-                        'detailed_type': 'service',
                         'list_price': 0.0,
                     })
                     operations['create_product'] = True
