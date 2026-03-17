@@ -59,3 +59,88 @@ class InvoiceAPIController(http.Controller):
             return {'id': result['id'], 'name': result['name'], 'quotation_id': result['id'], 'quotation_name': result['name']}
         except Exception as e:
             return {'error': str(e)}
+
+    @http.route(
+        '/api/status',
+        type='json',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def status(self, **payload):
+        operations = {
+            'create_client': False,
+            'create_product': False,
+            'create_quotation': False,
+            'create_invoice': False,
+        }
+
+        errors = {}
+
+        try:
+            with request.env.cr.savepoint():
+                try:
+                    partner = request.env['res.partner'].create({
+                        'name': 'API Status Test Client',
+                    })
+                    operations['create_client'] = True
+                except Exception as e:
+                    errors['create_client'] = str(e)
+
+                try:
+                    product = request.env['product.product'].create({
+                        'name': 'API Status Test Product',
+                        'detailed_type': 'service',
+                        'list_price': 0.0,
+                    })
+                    operations['create_product'] = True
+                except Exception as e:
+                    errors['create_product'] = str(e)
+                    product = None
+
+                if operations['create_client'] and operations['create_product']:
+                    try:
+                        line_items = [
+                            {
+                                'product_id': product.id,
+                                'quantity': 1,
+                                'price_unit': 0.0,
+                            }
+                        ]
+                        header_vals = {
+                            'partner_id': partner.id,
+                            'company_id': None,
+                            'validity_date': None,
+                        }
+                        request.env['sale.order'].create_quotation(header_vals, line_items)
+                        operations['create_quotation'] = True
+                    except Exception as e:
+                        errors['create_quotation'] = str(e)
+
+                    try:
+                        invoice_header = {
+                            'partner_id': partner.id,
+                            'company_id': None,
+                            'journal_id': None,
+                            'invoice_date': None,
+                            'payment_reference': None,
+                        }
+                        invoice_items = [
+                            {
+                                'product_id': product.id,
+                                'quantity': 1,
+                                'price_unit': 0.0,
+                            }
+                        ]
+                        request.env['account.move'].create_invoice(invoice_header, invoice_items)
+                        operations['create_invoice'] = True
+                    except Exception as e:
+                        errors['create_invoice'] = str(e)
+        except Exception as e:
+            errors['fatal'] = str(e)
+
+        return {
+            'status': 'ok',
+            'operations': operations,
+            'errors': errors,
+        }
