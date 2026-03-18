@@ -2,6 +2,10 @@ from odoo import http
 from odoo.http import request
 
 
+class _ApiStatusRollback(Exception):
+    pass
+
+
 class InvoiceAPIController(http.Controller):
 
     def _line_item_from_payload_item(self, item):
@@ -86,6 +90,7 @@ class InvoiceAPIController(http.Controller):
                     operations['create_client'] = True
                 except Exception as e:
                     errors['create_client'] = str(e)
+                    partner = None
 
                 try:
                     product = request.env['product.product'].create({
@@ -135,6 +140,10 @@ class InvoiceAPIController(http.Controller):
                         operations['create_invoice'] = True
                     except Exception as e:
                         errors['create_invoice'] = str(e)
+
+                raise _ApiStatusRollback()
+        except _ApiStatusRollback:
+            pass
         except Exception as e:
             errors['fatal'] = str(e)
 
