@@ -14,6 +14,44 @@ class InvoiceAPIController(http.Controller):
             return {'product_id': item['product_id'], 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
         return {'product_name': item.get('name', item.get('product_name')), 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
 
+    def _partner_payload(self, partner):
+        return {
+            'id': partner.id,
+            'name': partner.name or '',
+            'email': partner.email or '',
+            'phone': partner.phone or '',
+            'street': partner.street or '',
+            'city': partner.city or '',
+            'zip': partner.zip or '',
+            'country_id': [partner.country_id.id] if partner.country_id else None,
+            'country_code': partner.country_id.code if partner.country_id else None,
+            'is_company': bool(partner.is_company),
+        }
+
+    def _invoice_lines_payload(self, move):
+        return [
+            {
+                'id': line.id,
+                'name': line.name or '',
+                'quantity': line.quantity or 0,
+                'price_unit': float(line.price_unit or 0),
+                'price_subtotal': float(line.price_subtotal or 0),
+            }
+            for line in move.invoice_line_ids
+        ]
+
+    def _quote_lines_payload(self, order):
+        return [
+            {
+                'id': line.id,
+                'name': line.name or '',
+                'product_uom_qty': line.product_uom_qty or 0,
+                'price_unit': float(line.price_unit or 0),
+                'price_subtotal': float(line.price_subtotal or 0),
+            }
+            for line in order.order_line
+        ]
+
     @http.route(
         '/api/invoice',
         type='json',
@@ -65,6 +103,54 @@ class InvoiceAPIController(http.Controller):
             return {'error': str(e)}
 
     @http.route(
+        '/api/invoice/get',
+        type='json',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def get_invoice(self, **payload):
+        invoice_id = payload.get('id') or payload.get('invoice_id')
+        invoice_number = payload.get('invoiceNumber') or payload.get('invoice_number')
+
+        try:
+            if invoice_id:
+                move = request.env['account.move'].browse(int(invoice_id))
+                if not move.exists():
+                    return {'error': 'Invoice not found'}
+            elif invoice_number:
+                moves = request.env['account.move'].search(
+                    [('name', '=', invoice_number), ('move_type', '=', 'out_invoice')],
+                    limit=1,
+                )
+                if not moves:
+                    return {'error': 'Invoice not found'}
+                move = moves[0]
+            else:
+                return {'error': 'Invalid payload: missing id or invoiceNumber'}
+
+            partner = move.partner_id
+            invoice_date = move.invoice_date.strftime('%Y-%m-%d') if move.invoice_date else None
+            invoice_date_due = move.invoice_date_due.strftime('%Y-%m-%d') if move.invoice_date_due else None
+
+            return {
+                'document': {
+                    'id': move.id,
+                    'name': move.name,
+                    'state': move.state,
+                    'invoice_date': invoice_date,
+                    'invoice_date_due': invoice_date_due,
+                    'amount_untaxed': float(move.amount_untaxed or 0),
+                    'amount_total': float(move.amount_total or 0),
+                    'amount_tax': float(move.amount_tax or 0),
+                },
+                'partner': self._partner_payload(partner) if partner else None,
+                'lines': self._invoice_lines_payload(move),
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
         '/api/quotation',
         type='json',
         auth='api_key',
@@ -109,6 +195,51 @@ class InvoiceAPIController(http.Controller):
                 remove_line_ids=payload.get('items_to_remove', []) or [],
             )
             return {'id': result['id'], 'name': result['name'], 'quotation_id': result['id'], 'quotation_name': result['name']}
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
+        '/api/quotation/get',
+        type='json',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def get_quotation(self, **payload):
+        quotation_id = payload.get('id') or payload.get('quotation_id')
+        quote_number = payload.get('quoteNumber') or payload.get('quote_number') or payload.get('quotationNumber') or payload.get('quotation_number')
+
+        try:
+            if quotation_id:
+                order = request.env['sale.order'].browse(int(quotation_id))
+                if not order.exists():
+                    return {'error': 'Quotation not found'}
+            elif quote_number:
+                orders = request.env['sale.order'].search([('name', '=', quote_number)], limit=1)
+                if not orders:
+                    return {'error': 'Quotation not found'}
+                order = orders[0]
+            else:
+                return {'error': 'Invalid payload: missing id or quoteNumber'}
+
+            partner = order.partner_id
+            date_order = order.date_order.strftime('%Y-%m-%d %H:%M:%S') if order.date_order else None
+            validity_date = order.validity_date.strftime('%Y-%m-%d') if order.validity_date else None
+
+            return {
+                'document': {
+                    'id': order.id,
+                    'name': order.name,
+                    'state': order.state,
+                    'date_order': date_order,
+                    'validity_date': validity_date,
+                    'amount_untaxed': float(order.amount_untaxed or 0),
+                    'amount_total': float(order.amount_total or 0),
+                    'amount_tax': float(order.amount_tax or 0),
+                },
+                'partner': self._partner_payload(partner) if partner else None,
+                'lines': self._quote_lines_payload(order),
+            }
         except Exception as e:
             return {'error': str(e)}
 
