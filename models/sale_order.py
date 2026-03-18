@@ -23,8 +23,11 @@ class SaleOrder(models.Model):
                 'product_id': resolved['product_id'],
                 'product_uom_qty': resolved.get('quantity', 1),
                 'price_unit': resolved.get('price_unit') if resolved.get('price_unit') is not None else product.list_price,
-                'product_uom': resolved['uom_id'],
             }
+            if 'product_uom' in self.env['sale.order.line']._fields:
+                line_vals['product_uom'] = resolved['uom_id']
+            elif 'product_uom_id' in self.env['sale.order.line']._fields:
+                line_vals['product_uom_id'] = resolved['uom_id']
             if resolved.get('discount') is not None:
                 line_vals['discount'] = resolved['discount']
             if resolved.get('name') or resolved.get('description'):
