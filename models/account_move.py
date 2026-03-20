@@ -9,6 +9,43 @@ class AccountMove(models.Model):
     _inherit = 'account.move'
 
     @api.model
+    def _invoice_api_resolve_payment_term_id(self, company_id, partner_id, explicit_term_id=None):
+        company_id = int(company_id) if company_id else self.env.company.id
+        PaymentTerm = self.env['account.payment.term']
+        if explicit_term_id not in (None, False, ''):
+            term = PaymentTerm.browse(int(explicit_term_id))
+            if (
+                term.exists()
+                and (not term.company_id or term.company_id.id == company_id)
+            ):
+                return term.id
+            raise UserError('Invalid payment_term_id.')
+        if partner_id:
+            partner = self.env['res.partner'].browse(int(partner_id)).with_company(company_id)
+            if partner.property_payment_term_id:
+                return partner.property_payment_term_id.id
+        company = self.env['res.company'].browse(company_id)
+        if 'account_payment_term_id' in company._fields and company.account_payment_term_id:
+            return company.account_payment_term_id.id
+        for xml_id in (
+            'account.account_payment_term_30days',
+            'account.account_payment_term_30_days',
+        ):
+            term = self.env.ref(xml_id, raise_if_not_found=False)
+            if (
+                term
+                and term._name == 'account.payment.term'
+                and (not term.company_id or term.company_id.id == company_id)
+            ):
+                return term.id
+        term = PaymentTerm.search(
+            [('company_id', 'in', [False, company_id])],
+            order='sequence, id',
+            limit=1,
+        )
+        return term.id if term else False
+
+    @api.model
     def create_invoice(self, header_vals, line_items):
         if not line_items:
             raise UserError('At least one line item is required.')
@@ -42,6 +79,13 @@ class AccountMove(models.Model):
             move_vals['invoice_date'] = header_vals['invoice_date']
         if header_vals.get('payment_reference'):
             move_vals['payment_reference'] = header_vals['payment_reference']
+        pt_id = self._invoice_api_resolve_payment_term_id(
+            company_id,
+            header_vals.get('partner_id'),
+            header_vals.get('payment_term_id'),
+        )
+        if pt_id:
+            move_vals['invoice_payment_term_id'] = pt_id
         move = self.create(move_vals)
         _logger.info('Customer invoice created via API: move_id=%s name=%s', move.id, move.name)
         return {'id': move.id, 'name': move.name}
@@ -72,6 +116,17 @@ class AccountMove(models.Model):
                 write_vals['invoice_date_due'] = header_vals['invoice_date_due']
             if header_vals.get('payment_reference'):
                 write_vals['payment_reference'] = header_vals['payment_reference']
+            if 'payment_term_id' in header_vals or 'invoice_payment_term_id' in header_vals:
+                raw = header_vals.get('payment_term_id', header_vals.get('invoice_payment_term_id'))
+                if raw in (False, None, ''):
+                    write_vals['invoice_payment_term_id'] = False
+                else:
+                    pt_id = self._invoice_api_resolve_payment_term_id(
+                        company_id,
+                        header_vals.get('partner_id') or move.partner_id.id,
+                        raw,
+                    )
+                    write_vals['invoice_payment_term_id'] = pt_id or False
 
         commands = []
 

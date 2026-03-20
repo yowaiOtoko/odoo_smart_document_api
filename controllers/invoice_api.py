@@ -71,6 +71,7 @@ class InvoiceAPIController(http.Controller):
             'journal_id': payload.get('journal_id'),
             'invoice_date': payload.get('invoice_date'),
             'payment_reference': payload.get('payment_reference'),
+            'payment_term_id': payload.get('payment_term_id'),
         }
         try:
             result = request.env['account.move'].create_invoice(header_vals, line_items)
@@ -140,6 +141,8 @@ class InvoiceAPIController(http.Controller):
                     'state': move.state,
                     'invoice_date': invoice_date,
                     'invoice_date_due': invoice_date_due,
+                    'payment_term_id': move.invoice_payment_term_id.id if move.invoice_payment_term_id else None,
+                    'payment_term_name': move.invoice_payment_term_id.name if move.invoice_payment_term_id else None,
                     'amount_untaxed': float(move.amount_untaxed or 0),
                     'amount_total': float(move.amount_total or 0),
                     'amount_tax': float(move.amount_tax or 0),

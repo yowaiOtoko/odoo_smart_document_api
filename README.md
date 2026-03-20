@@ -35,6 +35,8 @@ Both routes expect **JSON** body, **POST**, and use ``auth='api_key'`` (configur
 +---------------------+------+----------+----------------------------------------+
 | payment_reference   | str  | no       | Payment reference                      |
 +---------------------+------+----------+----------------------------------------+
+| payment_term_id     | int  | no       | ``account.payment.term`` id (B2B due date). If omitted: partner receivable term, then company ``account_payment_term_id`` if present, then standard ``account.account_payment_term_30days`` when installed, else first available term |
++---------------------+------+----------+----------------------------------------+
 
 **Line item** (each element of ``items``): specify the product **either** by ``product_id`` **or** by ``product_name`` (or legacy ``name``).
 
@@ -122,6 +124,10 @@ or
   }
 
 **Error response**: same structure as invoice (``{"error": "..."}``).
+
+### Update customer invoice
+
+**POST** ``/api/invoice/update`` with ``header`` object. Supported header keys include ``payment_term_id`` or ``invoice_payment_term_id`` (same id), ``partner_id``, ``invoice_date``, ``invoice_date_due``, ``payment_reference``, ``journal_id``, ``company_id``. Set ``payment_term_id`` to ``false``/empty to clear the term.
 
 ## Example
 
