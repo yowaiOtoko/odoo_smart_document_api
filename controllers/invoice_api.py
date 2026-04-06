@@ -54,7 +54,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/invoice',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -81,7 +81,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/invoice/update',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -105,7 +105,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/invoice/get',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -155,7 +155,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/quotation',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -179,7 +179,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/quotation/update',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -203,7 +203,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/quotation/get',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
@@ -248,7 +248,7 @@ class InvoiceAPIController(http.Controller):
 
     @http.route(
         '/api/status',
-        type='json',
+        type='jsonrpc',
         auth='api_key',
         methods=['POST'],
         csrf=False,
