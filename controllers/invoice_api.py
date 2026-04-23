@@ -1,5 +1,6 @@
 from odoo import http
 from odoo.http import request
+import logging
 
 
 class _ApiStatusRollback(Exception):
@@ -334,3 +335,34 @@ class InvoiceAPIController(http.Controller):
             'operations': operations,
             'errors': errors,
         }
+
+    @http.route(
+        '/api/report/pdf/<string:report_name>/<int:res_id>',
+        type='http',
+        auth='api_key',
+        methods=['GET'],
+        csrf=False,
+    )
+    def get_report_pdf(self, report_name, res_id):
+        """Generate PDF report + return bytes. API-KEY auth. No web session."""
+        _logger = logging.getLogger(__name__)
+        try:
+            report = request.env['ir.actions.report'].sudo()._get_report_from_name(report_name)
+            if not report or not report.exists():
+                return request.make_response(
+                    f'Report "{report_name}" not found', status=404,
+                    headers=[('Content-Type', 'text/plain')])
+            pdf_content, _ = report.sudo()._render_qweb_pdf([int(res_id)])
+            filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
+            return request.make_response(
+                pdf_content,
+                headers=[
+                    ('Content-Type', 'application/pdf'),
+                    ('Content-Disposition', f'attachment; filename="{filename}"'),
+                    ('Content-Length', str(len(pdf_content))),
+                ])
+        except Exception as e:
+            _logger.exception('PDF error report=%s id=%s: %s', report_name, res_id, e)
+            return request.make_response(
+                f'PDF error: {str(e)}', status=500,
+                headers=[('Content-Type', 'text/plain')])
