@@ -1,5 +1,6 @@
-from odoo import http
+from odoo import http, release
 from odoo.http import request
+from odoo.tools import parse_version
 import logging
 
 
@@ -352,7 +353,12 @@ class InvoiceAPIController(http.Controller):
                 return request.make_response(
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
-            pdf_content, _ = report.sudo()._render_qweb_pdf([int(res_id)])
+            report_sudo = report.sudo()
+            if parse_version(release.version) < parse_version('16.0'):
+                pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
+            else:
+                pdf_content, _ = request.env['ir.actions.report'].sudo()._render_qweb_pdf(
+                    report_sudo, res_ids=[int(res_id)])
             filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
             return request.make_response(
                 pdf_content,
