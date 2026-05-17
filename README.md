@@ -127,6 +127,38 @@ or
 
 **POST** ``/api/invoice/update`` with ``header`` object. Supported header keys include ``payment_term_id`` or ``invoice_payment_term_id`` (same id), ``partner_id``, ``invoice_date``, ``invoice_date_due``, ``payment_reference``, ``journal_id``, ``company_id``. Set ``payment_term_id`` to ``false``/empty to clear the term.
 
+### Set customer invoice as paid
+
+**POST** ``/api/invoice/set_paid``
+
+Payload:
+
+```json
+{
+  "id": 42,
+  "journal_id": 7,
+  "amount": 128.0,
+  "payment_date": "2026-05-17",
+  "reference": "FACTURE PAYEE WHATSAPP"
+}
+```
+
+Fields:
+
+| Field        | Type   | Required | Description |
+|--------------|--------|----------|-------------|
+| id           | int    | yes      | Invoice id (alias: ``invoice_id``) |
+| journal_id   | int    | no       | Bank/cash journal id. If omitted, API picks the first bank/cash journal in the invoice company |
+| amount       | float  | no       | Payment amount. Defaults to invoice residual amount |
+| payment_date | date   | no       | Payment date |
+| reference    | string | no       | Payment communication/reference (alias: ``payment_reference``) |
+
+Behavior:
+
+- Posts the invoice first when it is still in draft.
+- Registers the payment through ``account.payment.register`` in one server-side call.
+- Returns invoice state, payment state, and residual amount.
+
 ## Example
 
 Create an invoice with one line by product id and one by name:

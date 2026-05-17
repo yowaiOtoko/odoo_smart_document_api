@@ -9,6 +9,13 @@ class AccountMove(models.Model):
     _inherit = 'account.move'
 
     @api.model
+    def _invoice_api_default_payment_journal(self, company_id):
+        return self.env['account.journal'].search([
+            ('company_id', '=', int(company_id)),
+            ('type', 'in', ['bank', 'cash']),
+        ], order='sequence, id', limit=1)
+
+    @api.model
     def _invoice_api_resolve_payment_term_id(self, company_id, partner_id, explicit_term_id=None):
         company_id = int(company_id) if company_id else self.env.company.id
         PaymentTerm = self.env['account.payment.term']
@@ -186,3 +193,73 @@ class AccountMove(models.Model):
         move.write(write_vals)
         _logger.info('Customer invoice updated via API: move_id=%s name=%s', move.id, move.name)
         return {'id': move.id, 'name': move.name}
+
+    @api.model
+    def set_invoice_paid(self, move_id, journal_id=None, amount=None, payment_date=None, reference=None):
+        move = self.browse(int(move_id)).exists()
+        if not move:
+            raise UserError(f'Invoice with id {move_id} not found.')
+        if move.move_type != 'out_invoice':
+            raise UserError('Only customer invoices (out_invoice) can be paid with this API.')
+
+        if move.state == 'draft':
+            move.action_post()
+        if move.state != 'posted':
+            raise UserError(f'Invoice {move.name or move.id} must be posted before payment.')
+
+        if move.payment_state == 'paid' or float(move.amount_residual or 0.0) <= 0.0:
+            return {
+                'id': move.id,
+                'name': move.name,
+                'state': move.state,
+                'payment_state': move.payment_state,
+                'amount_residual': float(move.amount_residual or 0.0),
+            }
+
+        target_amount = float(amount) if amount not in (None, False, '') else float(move.amount_residual or 0.0)
+        if target_amount <= 0.0:
+            raise UserError('Payment amount must be strictly positive.')
+
+        target_journal = None
+        if journal_id not in (None, False, ''):
+            target_journal = self.env['account.journal'].browse(int(journal_id)).exists()
+            if not target_journal:
+                raise UserError(f'Journal with id {journal_id} not found.')
+            if target_journal.company_id.id != move.company_id.id:
+                raise UserError('Journal company does not match invoice company.')
+        else:
+            target_journal = self._invoice_api_default_payment_journal(move.company_id.id)
+
+        if not target_journal:
+            raise UserError('No bank/cash journal found to register payment.')
+
+        register_ctx = {
+            'active_model': 'account.move',
+            'active_ids': [move.id],
+            'active_id': move.id,
+        }
+
+        Register = self.env['account.payment.register'].with_context(**register_ctx)
+        register_vals = {'journal_id': target_journal.id}
+
+        if payment_date not in (None, False, '') and 'payment_date' in Register._fields:
+            register_vals['payment_date'] = payment_date
+        if 'amount' in Register._fields:
+            register_vals['amount'] = target_amount
+        if reference not in (None, False, ''):
+            if 'communication' in Register._fields:
+                register_vals['communication'] = reference
+            elif 'ref' in Register._fields:
+                register_vals['ref'] = reference
+
+        register = Register.create(register_vals)
+        register.action_create_payments()
+
+        _logger.info('Customer invoice set to paid via API: move_id=%s name=%s', move.id, move.name)
+        return {
+            'id': move.id,
+            'name': move.name,
+            'state': move.state,
+            'payment_state': move.payment_state,
+            'amount_residual': float(move.amount_residual or 0.0),
+        }

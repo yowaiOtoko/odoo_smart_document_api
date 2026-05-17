@@ -106,6 +106,38 @@ class InvoiceAPIController(http.Controller):
             return {'error': str(e)}
 
     @http.route(
+        '/api/invoice/set_paid',
+        type='jsonrpc',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def set_invoice_paid(self, **payload):
+        invoice_id = payload.get('id') or payload.get('invoice_id')
+        if not invoice_id:
+            return {'error': 'Invalid payload: missing id'}
+
+        try:
+            result = request.env['account.move'].set_invoice_paid(
+                invoice_id,
+                journal_id=payload.get('journal_id'),
+                amount=payload.get('amount'),
+                payment_date=payload.get('payment_date'),
+                reference=payload.get('reference') or payload.get('payment_reference'),
+            )
+            return {
+                'id': result['id'],
+                'name': result['name'],
+                'invoice_id': result['id'],
+                'invoice_name': result['name'],
+                'state': result.get('state'),
+                'payment_state': result.get('payment_state'),
+                'amount_residual': result.get('amount_residual'),
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
         '/api/invoice/get',
         type='jsonrpc',
         auth='api_key',
