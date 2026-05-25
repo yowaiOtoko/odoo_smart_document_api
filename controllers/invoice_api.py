@@ -173,6 +173,7 @@ class InvoiceAPIController(http.Controller):
                     'id': move.id,
                     'name': move.name,
                     'state': move.state,
+                    'payment_state': move.payment_state,
                     'invoice_date': invoice_date,
                     'invoice_date_due': invoice_date_due,
                     'payment_term_id': move.invoice_payment_term_id.id if move.invoice_payment_term_id else None,
@@ -180,6 +181,7 @@ class InvoiceAPIController(http.Controller):
                     'amount_untaxed': float(move.amount_untaxed or 0),
                     'amount_total': float(move.amount_total or 0),
                     'amount_tax': float(move.amount_tax or 0),
+                    'amount_residual': float(move.amount_residual or 0),
                 },
                 'partner': self._partner_payload(partner) if partner else None,
                 'lines': self._invoice_lines_payload(move),
@@ -386,6 +388,17 @@ class InvoiceAPIController(http.Controller):
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
             report_sudo = report.sudo()
+
+            # Always refresh report output: remove existing cached report attachment
+            # for the target record when attachment-based reuse is enabled.
+            if report_sudo.attachment:
+                model_name = report_sudo.model
+                record = request.env[model_name].sudo().browse(int(res_id))
+                if record.exists():
+                    attachment = report_sudo.retrieve_attachment(record)
+                    if attachment and attachment.exists():
+                        attachment.sudo().unlink()
+
             if parse_version(release.version) < parse_version('16.0'):
                 pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
             else:
@@ -398,6 +411,9 @@ class InvoiceAPIController(http.Controller):
                     ('Content-Type', 'application/pdf'),
                     ('Content-Disposition', f'attachment; filename="{filename}"'),
                     ('Content-Length', str(len(pdf_content))),
+                    ('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0'),
+                    ('Pragma', 'no-cache'),
+                    ('Expires', '0'),
                 ])
         except Exception as e:
             _logger.exception('PDF error report=%s id=%s: %s', report_name, res_id, e)
