@@ -387,23 +387,16 @@ class InvoiceAPIController(http.Controller):
                 return request.make_response(
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
-            report_sudo = report.sudo()
-
-            # Always refresh report output: remove existing cached report attachment
-            # for the target record when attachment-based reuse is enabled.
-            if report_sudo.attachment:
-                model_name = report_sudo.model
-                record = request.env[model_name].sudo().browse(int(res_id))
-                if record.exists():
-                    attachment = report_sudo.retrieve_attachment(record)
-                    if attachment and attachment.exists():
-                        attachment.sudo().unlink()
+            report_sudo = report.with_env(request.env(sudo=True))
+            report_sudo = report_sudo.with_context(
+                force_report_rendering=True,
+                attachment_use=False,
+            )
 
             if parse_version(release.version) < parse_version('16.0'):
                 pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
             else:
-                pdf_content, _ = request.env['ir.actions.report'].sudo()._render_qweb_pdf(
-                    report_sudo, res_ids=[int(res_id)])
+                pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
             filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
             return request.make_response(
                 pdf_content,
