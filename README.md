@@ -1,187 +1,175 @@
-# Quotations & Invoices API (products by name or id)
+# Quotations and Invoices API
 
-Odoo addon to create **quotations** (sale.order) and **customer invoices** (account.move) from a single request. Line items can specify products by **id** or by **name**; the backend resolves or creates products and then creates the document using standard Odoo logic.
+Odoo 19 module to create, update, and fetch quotations and customer invoices through API routes. Product lines can be resolved by product id or product name (with fuzzy matching).
 
-## Features
+## What this module provides
 
-- **Single request**: Create a quotation or an invoice with a list of products in one call. No client-side product resolution or multiple RPCs.
-- **Product by id or name**: Each line can use ``product_id`` (existing product) or ``product_name`` (search or create).
-- **Name matching**: When using a name, the backend uses FTS + trigram fuzzy matching (French). If no acceptable match is found, a new product is created with a default UoM (service product → any product → first UoM).
-- **Idempotency**: The same product name in one request resolves to the same product; repeated calls reuse existing products.
-- **RPC**: The same logic is available as model methods ``sale.order.create_quotation(header_vals, line_items)`` and ``account.move.create_invoice(header_vals, line_items)`` for XML-RPC/JSON-RPC.
+- Create quotation: POST /api/quotation
+- Update quotation: POST /api/quotation/update
+- Get quotation: POST /api/quotation/get
+- Create invoice: POST /api/invoice
+- Update invoice: POST /api/invoice/update
+- Get invoice: POST /api/invoice/get
+- Mark invoice as paid: POST /api/invoice/set_paid
+- Health and capability check: POST /api/status
 
-## HTTP endpoints
+All routes use:
 
-Both routes expect **JSON** body, **POST**, and use ``auth='api_key'`` (configure API key auth in Odoo). **CSRF** is disabled for these routes.
+- auth='api_key'
+- methods=['POST']
+- type='jsonrpc'
+- csrf=False
 
-### Create customer invoice
+## Installation
 
-**POST** ``/api/invoice``
+1. Copy module into your custom addons path.
+2. Update apps list in Odoo.
+3. Install module: Quotations and Invoices API.
+4. Ensure API key auth is enabled in your Odoo deployment.
+5. Generate API key for integration user.
 
-**Request body**
+## Permissions needed
 
-+---------------------+------+----------+----------------------------------------+
-| Field               | Type | Required | Description                            |
-+=====================+======+==========+========================================+
-| partner_id          | int  | yes      | Partner (customer) id                  |
-+---------------------+------+----------+----------------------------------------+
-| items               | list | yes      | Line items (see below)                 |
-+---------------------+------+----------+----------------------------------------+
-| company_id          | int  | no       | Company id (default: current company)  |
-+---------------------+------+----------+----------------------------------------+
-| journal_id          | int  | no       | Journal id                             |
-+---------------------+------+----------+----------------------------------------+
-| invoice_date        | date | no       | Invoice date                           |
-+---------------------+------+----------+----------------------------------------+
-| payment_reference   | str  | no       | Payment reference                      |
-+---------------------+------+----------+----------------------------------------+
-| payment_term_id     | int  | no       | ``account.payment.term`` id (B2B)      |
-+---------------------+------+----------+----------------------------------------+
+Integration user should have rights to:
 
-If ``payment_term_id`` is omitted, the invoice uses the partner receivable term, then the company ``account_payment_term_id`` when present, then standard ``account.account_payment_term_30days`` when installed, otherwise the first available term.
+- Contacts (read/create partners)
+- Sales (quotation read/write/create)
+- Invoicing (invoice read/write/create, payment registration)
+- Products (read/create when product name fallback creates missing product)
 
-**Line item** (each element of ``items``): specify the product **either** by ``product_id`` **or** by ``product_name`` (or legacy ``name``).
+If user has missing ACLs, API returns error with Odoo exception message.
 
-+------------------------+--------+----------+------------------------------------------------------------------+
-| Field                  | Type   | Required | Description                                                      |
-+========================+========+==========+==================================================================+
-| product_id             | int    | no*      | Product (variant) id. If present, this line is resolved by id.   |
-+------------------------+--------+----------+------------------------------------------------------------------+
-| product_name or name   | str    | no*      | Product name for search/create. Used when product_id is not set. |
-+------------------------+--------+----------+------------------------------------------------------------------+
-| quantity or qty        | number | no       | Quantity (default 1)                                             |
-+------------------------+--------+----------+------------------------------------------------------------------+
-| price_unit or price    | number | no       | Unit price (default: product list price)                         |
-+------------------------+--------+----------+------------------------------------------------------------------+
-| discount               | number | no       | Discount (%)                                                     |
-+------------------------+--------+----------+------------------------------------------------------------------+
-| name / description     | str    | no       | Line description                                                 |
-+------------------------+--------+----------+------------------------------------------------------------------+
+## JSON-RPC request format
 
-\* Each line must have either ``product_id`` or ``product_name``/``name``.
+Because routes use type='jsonrpc', send payload with params object.
 
-**Success response**
+Example envelope:
 
-::
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "call",
+  "params": {
+    "partner_id": 5,
+    "items": [
+      {"product_id": 12, "quantity": 2, "price_unit": 100}
+    ]
+  },
+  "id": 1
+}
+```
 
-  {
-    "id": 42,
-    "name": "INV/2025/0001",
-    "invoice_id": 42,
-    "invoice_name": "INV/2025/0001"
-  }
+## Example payloads
 
-**Error response**
+### Create invoice
 
-::
+Route: POST /api/invoice
 
-  {
-    "error": "Invalid payload"
-  }
-
-or
-
-::
-
-  {
-    "error": "Product with id 999 not found or not usable."
-  }
-
----
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "call",
+  "params": {
+    "partner_id": 5,
+    "company_id": 1,
+    "invoice_date": "2026-05-25",
+    "payment_reference": "WHATSAPP-INV-001",
+    "items": [
+      {"product_id": 12, "quantity": 2, "price_unit": 100},
+      {"product_name": "Consulting hour", "quantity": 1, "price_unit": 80}
+    ]
+  },
+  "id": 2
+}
+```
 
 ### Create quotation
 
+Route: POST /api/quotation
 
-**POST** ``/api/quotation``
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "call",
+  "params": {
+    "partner_id": 5,
+    "validity_date": "2026-06-30",
+    "items": [
+      {"product_name": "Onboarding package", "quantity": 1, "price_unit": 300}
+    ]
+  },
+  "id": 3
+}
+```
 
-**Request body**
+### Update invoice header and lines
 
-+----------------+------+----------+--------------------------------------------------+
-| Field          | Type | Required | Description                                      |
-+================+======+==========+==================================================+
-| partner_id     | int  | yes      | Partner (customer) id                            |
-+----------------+------+----------+--------------------------------------------------+
-| items          | list | yes      | Line items (same shape as invoice)               |
-+----------------+------+----------+--------------------------------------------------+
-| company_id     | int  | no       | Company id (default: current company)            |
-+----------------+------+----------+--------------------------------------------------+
-| validity_date  | date | no       | Quotation validity date                          |
-+----------------+------+----------+--------------------------------------------------+
+Route: POST /api/invoice/update
 
-**Line item**: same as for invoice (see above).
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "call",
+  "params": {
+    "id": 42,
+    "header": {
+      "payment_reference": "WHATSAPP-INV-001-UPDATED"
+    },
+    "items_to_add": [
+      {"product_name": "Extra service", "quantity": 1, "price_unit": 50}
+    ],
+    "items_to_update": [],
+    "items_to_remove": []
+  },
+  "id": 4
+}
+```
 
-**Success response**
+### Set invoice paid
 
-::
+Route: POST /api/invoice/set_paid
 
-  {
-    "id": 10,
-    "name": "S00010",
-    "quotation_id": 10,
-    "quotation_name": "S00010"
-  }
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "call",
+  "params": {
+    "id": 42,
+    "journal_id": 7,
+    "amount": 280.0,
+    "payment_date": "2026-05-25",
+    "reference": "PAID-WHATSAPP"
+  },
+  "id": 5
+}
+```
 
-**Error response**: same structure as invoice (``{"error": "..."}``).
+## Successful responses
 
-### Update customer invoice
-
-**POST** ``/api/invoice/update`` with ``header`` object. Supported header keys include ``payment_term_id`` or ``invoice_payment_term_id`` (same id), ``partner_id``, ``invoice_date``, ``invoice_date_due``, ``payment_reference``, ``journal_id``, ``company_id``. Set ``payment_term_id`` to ``false``/empty to clear the term.
-
-### Set customer invoice as paid
-
-**POST** ``/api/invoice/set_paid``
-
-Payload:
+Typical create response:
 
 ```json
 {
   "id": 42,
-  "journal_id": 7,
-  "amount": 128.0,
-  "payment_date": "2026-05-17",
-  "reference": "FACTURE PAYEE WHATSAPP"
+  "name": "INV/2026/0001",
+  "invoice_id": 42,
+  "invoice_name": "INV/2026/0001"
 }
 ```
 
-Fields:
+## Error responses
 
-| Field        | Type   | Required | Description |
-|--------------|--------|----------|-------------|
-| id           | int    | yes      | Invoice id (alias: ``invoice_id``) |
-| journal_id   | int    | no       | Bank/cash journal id. If omitted, API picks the first bank/cash journal in the invoice company |
-| amount       | float  | no       | Payment amount. Defaults to invoice residual amount |
-| payment_date | date   | no       | Payment date |
-| reference    | string | no       | Payment communication/reference (alias: ``payment_reference``) |
+Typical error shape:
 
-Behavior:
+```json
+{
+  "error": "Invalid payload"
+}
+```
 
-- Posts the invoice first when it is still in draft.
-- Registers the payment through ``account.payment.register`` in one server-side call.
-- Returns invoice state, payment state, and residual amount.
+Other frequent errors:
 
-## Example
-
-Create an invoice with one line by product id and one by name:
-
-::
-
-  POST /api/invoice
-  {
-    "partner_id": 5,
-    "items": [
-      { "product_id": 12, "quantity": 2, "price_unit": 100 },
-      { "product_name": "Consulting heure", "quantity": 1, "price_unit": 80 }
-    ]
-  }
-
-## Dependencies
-
-- ``account``
-- ``product``
-- ``sale``
-
-## Installation
-
-Install the addon in your Odoo instance and ensure API key authentication is configured if you use the HTTP endpoints.
-
-**Repo name:** To match the addon name, you can rename this repository (e.g. to ``odoo_quotation_invoice_api``) in your Git host settings (e.g. GitHub: Settings → General → Repository name). The addon directory name does not need to match.
+- Missing partner_id or empty items
+- Product id not found
+- Missing rights on account.move or sale.order
+- Validation errors from business rules
