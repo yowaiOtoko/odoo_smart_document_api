@@ -387,7 +387,7 @@ class InvoiceAPIController(http.Controller):
                 return request.make_response(
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
-            report_sudo = report.with_env(request.env(sudo=True))
+            report_sudo = report.sudo()
             report_sudo = report_sudo.with_context(
                 force_report_rendering=True,
                 attachment_use=False,
