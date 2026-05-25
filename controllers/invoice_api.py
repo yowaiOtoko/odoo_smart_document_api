@@ -396,7 +396,11 @@ class InvoiceAPIController(http.Controller):
             if parse_version(release.version) < parse_version('16.0'):
                 pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
             else:
-                pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
+                report_service = request.env['ir.actions.report'].sudo().with_context(
+                    force_report_rendering=True,
+                    attachment_use=False,
+                )
+                pdf_content, _ = report_service._render_qweb_pdf(report_name, [int(res_id)])
             filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
             return request.make_response(
                 pdf_content,
