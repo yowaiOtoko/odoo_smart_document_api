@@ -196,6 +196,12 @@ class ProductResolver(models.AbstractModel):
     def resolve_line_item(self, line_item, name_cache, company_id):
         product_id = line_item.get('product_id')
         product_name = line_item.get('product_name')
+        detailed_type = line_item.get('detailed_type')
+        if detailed_type == 'product':
+            detailed_type = 'consu'
+        if detailed_type not in ('service', 'consu'):
+            detailed_type = 'service' if bool(line_item.get('is_service')) else 'consu'
+
         if product_id is not None and product_id != '':
             out = self.resolve_by_id(product_id)
         elif product_name is not None and product_name != '':
@@ -203,7 +209,7 @@ class ProductResolver(models.AbstractModel):
                 name=product_name,
                 company_id=company_id,
                 price=line_item.get('price'),
-                detailed_type=line_item.get('detailed_type', 'service'),
+                detailed_type=detailed_type,
                 name_cache=name_cache,
             )
             product = result['product']
@@ -223,4 +229,6 @@ class ProductResolver(models.AbstractModel):
         out['discount'] = line_item.get('discount')
         out['name'] = line_item.get('name')
         out['description'] = line_item.get('description')
+        out['detailed_type'] = detailed_type
+        out['tax_ids'] = line_item.get('tax_ids')
         return out

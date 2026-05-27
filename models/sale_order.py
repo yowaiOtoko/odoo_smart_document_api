@@ -15,6 +15,7 @@ class SaleOrder(models.Model):
         resolver = self.env['invoice_api.product_resolver']
         name_cache = {}
         company_id = header_vals.get('company_id') or self.env.company.id
+        tax_field = 'tax_id' if 'tax_id' in self.env['sale.order.line']._fields else 'tax_ids'
         lines_vals = []
         for item in line_items:
             resolved = resolver.resolve_line_item(item, name_cache, company_id)
@@ -32,6 +33,11 @@ class SaleOrder(models.Model):
                 line_vals['discount'] = resolved['discount']
             if resolved.get('name') or resolved.get('description'):
                 line_vals['name'] = resolved.get('name') or resolved.get('description')
+            tax_ids = resolved.get('tax_ids') or []
+            if tax_ids:
+                clean_tax_ids = [int(t) for t in tax_ids if t]
+                if clean_tax_ids:
+                    line_vals[tax_field] = [(6, 0, clean_tax_ids)]
             lines_vals.append((0, 0, line_vals))
         order_vals = {
             'partner_id': header_vals.get('partner_id'),
@@ -53,6 +59,7 @@ class SaleOrder(models.Model):
         resolver = self.env['invoice_api.product_resolver']
         name_cache = {}
         company_id = (header_vals or {}).get('company_id') or order.company_id.id or self.env.company.id
+        tax_field = 'tax_id' if 'tax_id' in self.env['sale.order.line']._fields else 'tax_ids'
 
         write_vals = {}
         if header_vals:
@@ -83,6 +90,11 @@ class SaleOrder(models.Model):
                 line_vals['discount'] = resolved['discount']
             if resolved.get('name') or resolved.get('description'):
                 line_vals['name'] = resolved.get('name') or resolved.get('description')
+            tax_ids = resolved.get('tax_ids') or []
+            if tax_ids:
+                clean_tax_ids = [int(t) for t in tax_ids if t]
+                if clean_tax_ids:
+                    line_vals[tax_field] = [(6, 0, clean_tax_ids)]
             commands.append((0, 0, line_vals))
 
         for item in (update_line_items or []):
@@ -112,6 +124,15 @@ class SaleOrder(models.Model):
                     line_vals['product_uom_id'] = resolved['uom_id']
                 if resolved.get('price_unit') is not None:
                     line_vals['price_unit'] = resolved.get('price_unit')
+                tax_ids = resolved.get('tax_ids') or []
+                if tax_ids:
+                    clean_tax_ids = [int(t) for t in tax_ids if t]
+                    if clean_tax_ids:
+                        line_vals[tax_field] = [(6, 0, clean_tax_ids)]
+
+            if item.get('tax_ids') is not None:
+                clean_tax_ids = [int(t) for t in (item.get('tax_ids') or []) if t]
+                line_vals[tax_field] = [(6, 0, clean_tax_ids)] if clean_tax_ids else [(5, 0, 0)]
 
             if line_vals:
                 commands.append((1, int(line_id), line_vals))

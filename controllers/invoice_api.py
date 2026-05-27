@@ -12,9 +12,22 @@ class InvoiceAPIController(http.Controller):
 
     def _line_item_from_payload_item(self, item):
         price = item.get('price_unit', item.get('price'))
+        payload = {
+            'quantity': item.get('qty', item.get('quantity', 1)),
+            'price_unit': price,
+            'price': price,
+            'discount': item.get('discount'),
+            'name': item.get('name'),
+            'description': item.get('description'),
+            'detailed_type': item.get('detailed_type'),
+            'tax_ids': item.get('tax_ids'),
+        }
         if 'product_id' in item:
-            return {'product_id': item['product_id'], 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
-        return {'product_name': item.get('name', item.get('product_name')), 'quantity': item.get('qty', item.get('quantity', 1)), 'price_unit': price, 'price': price, 'discount': item.get('discount'), 'name': item.get('name'), 'description': item.get('description')}
+            payload['product_id'] = item['product_id']
+            return payload
+
+        payload['product_name'] = item.get('name', item.get('product_name'))
+        return payload
 
     def _partner_payload(self, partner):
         return {
