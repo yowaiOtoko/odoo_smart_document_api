@@ -1,6 +1,6 @@
 {
     'name': 'Quotations & Invoices API (products by name or id)',
-    'version': '19.0.1.0.8',
+    'version': '19.0.1.0.9',
     'category': 'Accounting',
     'summary': 'Create quotations and invoices via API with products by name or id, fuzzy matching',
     'author': 'yowaiOtoko',

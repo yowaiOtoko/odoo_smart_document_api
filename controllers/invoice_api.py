@@ -400,18 +400,17 @@ class InvoiceAPIController(http.Controller):
                 return request.make_response(
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
-            report_sudo = report.sudo()
-            report_sudo = report_sudo.with_context(
-                force_report_rendering=True,
-                attachment_use=False,
-            )
 
             if parse_version(release.version) < parse_version('16.0'):
+                report_sudo = report.sudo().with_context(
+                    force_report_rendering=True,
+                    report_pdf_no_attachment=True,
+                )
                 pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
             else:
                 report_service = request.env['ir.actions.report'].sudo().with_context(
                     force_report_rendering=True,
-                    attachment_use=False,
+                    report_pdf_no_attachment=True,
                 )
                 pdf_content, _ = report_service._render_qweb_pdf(report_name, [int(res_id)])
             filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
