@@ -1,4 +1,5 @@
 from odoo import http, release
+from odoo.addons.account.controllers.portal import PortalAccount
 from odoo.http import request
 from odoo.tools import parse_version
 import logging
@@ -401,7 +402,34 @@ class InvoiceAPIController(http.Controller):
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
 
-            if parse_version(release.version) < parse_version('16.0'):
+            live_invoice_report_names = {
+                'account.report_invoice',
+                'account.report_invoice_with_payments',
+                'account.account_invoices',
+            }
+            move = None
+            if report.model == 'account.move':
+                move = request.env['account.move'].sudo().browse(int(res_id))
+                if not move.exists():
+                    return request.make_response(
+                        f'Record "{res_id}" not found', status=404,
+                        headers=[('Content-Type', 'text/plain')])
+
+                # Reuse Odoo's exact portal preview controller for invoices so the
+                # API returns the same live PDF as `/my/invoices/...&report_type=pdf`.
+            if (
+                move
+                and move.is_invoice(include_receipts=True)
+                and report_name in live_invoice_report_names
+            ):
+                    access_token = move._portal_ensure_token()
+                    return PortalAccount().portal_my_invoice_detail(
+                        move.id,
+                        access_token=access_token,
+                        report_type='pdf',
+                        download=False,
+                )
+            elif parse_version(release.version) < parse_version('16.0'):
                 report_sudo = report.sudo().with_context(
                     force_report_rendering=True,
                     report_pdf_no_attachment=True,
