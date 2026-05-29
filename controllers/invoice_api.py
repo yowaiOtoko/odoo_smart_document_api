@@ -1,8 +1,9 @@
-from odoo import http, release
-from odoo.addons.account.controllers.portal import PortalAccount
-from odoo.http import request
-from odoo.tools import parse_version
+import json
 import logging
+
+from odoo import http
+from odoo.addons.web.controllers.report import ReportController
+from odoo.http import request
 
 
 class _ApiStatusRollback(Exception):
@@ -393,65 +394,39 @@ class InvoiceAPIController(http.Controller):
         csrf=False,
     )
     def get_report_pdf(self, report_name, res_id):
-        """Generate PDF report + return bytes. API-KEY auth. No web session."""
+        """Generate PDF report via native /report/download flow for UI parity."""
         _logger = logging.getLogger(__name__)
         try:
-            report = request.env['ir.actions.report'].sudo()._get_report_from_name(report_name)
+            report = request.env['ir.actions.report']._get_report_from_name(report_name)
             if not report or not report.exists():
                 return request.make_response(
                     f'Report "{report_name}" not found', status=404,
                     headers=[('Content-Type', 'text/plain')])
 
-            live_invoice_report_names = {
-                'account.report_invoice',
-                'account.report_invoice_with_payments',
-                'account.account_invoices',
-            }
-            move = None
+            render_context = dict(request.env.context)
             if report.model == 'account.move':
-                move = request.env['account.move'].sudo().browse(int(res_id))
+                move = request.env['account.move'].browse(int(res_id))
                 if not move.exists():
                     return request.make_response(
                         f'Record "{res_id}" not found', status=404,
                         headers=[('Content-Type', 'text/plain')])
+                if move.company_id:
+                    render_context['allowed_company_ids'] = [move.company_id.id]
 
-                # Reuse Odoo's exact portal preview controller for invoices so the
-                # API returns the same live PDF as `/my/invoices/...&report_type=pdf`.
-            if (
-                move
-                and move.is_invoice(include_receipts=True)
-                and report_name in live_invoice_report_names
-            ):
-                    access_token = move._portal_ensure_token()
-                    return PortalAccount().portal_my_invoice_detail(
-                        move.id,
-                        access_token=access_token,
-                        report_type='pdf',
-                        download=False,
-                )
-            elif parse_version(release.version) < parse_version('16.0'):
-                report_sudo = report.sudo().with_context(
-                    force_report_rendering=True,
-                    report_pdf_no_attachment=True,
-                )
-                pdf_content, _ = report_sudo._render_qweb_pdf([int(res_id)])
-            else:
-                report_service = request.env['ir.actions.report'].sudo().with_context(
-                    force_report_rendering=True,
-                    report_pdf_no_attachment=True,
-                )
-                pdf_content, _ = report_service._render_qweb_pdf(report_name, [int(res_id)])
-            filename = f"{report_name.replace('.', '_')}_{res_id}.pdf"
-            return request.make_response(
-                pdf_content,
-                headers=[
-                    ('Content-Type', 'application/pdf'),
-                    ('Content-Disposition', f'attachment; filename="{filename}"'),
-                    ('Content-Length', str(len(pdf_content))),
-                    ('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0'),
-                    ('Pragma', 'no-cache'),
-                    ('Expires', '0'),
-                ])
+            controller = ReportController()
+            download_payload = json.dumps([
+                f'/report/pdf/{report_name}/{int(res_id)}',
+                'qweb-pdf',
+            ])
+            response = controller.report_download(
+                data=download_payload,
+                context=json.dumps(render_context),
+                token='api',
+            )
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
         except Exception as e:
             _logger.exception('PDF error report=%s id=%s: %s', report_name, res_id, e)
             return request.make_response(
