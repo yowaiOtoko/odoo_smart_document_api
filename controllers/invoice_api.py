@@ -397,6 +397,7 @@ class InvoiceAPIController(http.Controller):
         """Generate PDF report via native /report/download flow for UI parity."""
         _logger = logging.getLogger(__name__)
         try:
+            requested_report_name = report_name
             report = request.env['ir.actions.report']._get_report_from_name(report_name)
             if not report or not report.exists():
                 return request.make_response(
@@ -413,6 +414,13 @@ class InvoiceAPIController(http.Controller):
                 if move.company_id:
                     render_context['allowed_company_ids'] = [move.company_id.id]
 
+                # Keep UI-like layout, but include payments when caller requests account.report_invoice.
+                if report_name == 'account.report_invoice':
+                    paid_report = request.env['ir.actions.report']._get_report_from_name('account.report_invoice_with_payments')
+                    if paid_report and paid_report.exists():
+                        report_name = 'account.report_invoice_with_payments'
+                        report = paid_report
+
             controller = ReportController()
             download_payload = json.dumps([
                 f'/report/pdf/{report_name}/{int(res_id)}',
@@ -428,7 +436,7 @@ class InvoiceAPIController(http.Controller):
             response.headers['Expires'] = '0'
             return response
         except Exception as e:
-            _logger.exception('PDF error report=%s id=%s: %s', report_name, res_id, e)
+            _logger.exception('PDF error report=%s requested=%s id=%s: %s', report_name, requested_report_name, res_id, e)
             return request.make_response(
                 f'PDF error: {str(e)}', status=500,
                 headers=[('Content-Type', 'text/plain')])
