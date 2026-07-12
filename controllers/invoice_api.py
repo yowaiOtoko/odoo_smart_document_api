@@ -24,8 +24,9 @@ class InvoiceAPIController(http.Controller):
             'detailed_type': item.get('detailed_type'),
             'tax_ids': item.get('tax_ids'),
         }
-        if 'product_id' in item:
-            payload['product_id'] = item['product_id']
+        product_id = item.get('product_id')
+        if product_id is not None and product_id != '':
+            payload['product_id'] = product_id
             return payload
 
         payload['product_name'] = item.get('name', item.get('product_name'))
