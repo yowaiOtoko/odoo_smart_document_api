@@ -69,6 +69,19 @@ class InvoiceAPIController(http.Controller):
             for line in order.order_line
         ]
 
+    def _delivery_lines_payload(self, picking):
+        return [
+            {
+                'id': move.id,
+                'name': move.name or '',
+                'product_id': move.product_id.id,
+                'product_name': move.product_id.name or '',
+                'quantity': float(move.product_uom_qty or 0),
+                'quantity_done': float(move.quantity_done or 0),
+            }
+            for move in picking.move_ids_without_package
+        ]
+
     @http.route(
         '/api/invoice',
         type='jsonrpc',
@@ -293,6 +306,101 @@ class InvoiceAPIController(http.Controller):
                 },
                 'partner': self._partner_payload(partner) if partner else None,
                 'lines': self._quote_lines_payload(order),
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
+        '/api/delivery',
+        type='jsonrpc',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def create_delivery(self, **payload):
+        partner_id = payload.get('partner_id')
+        items = payload.get('items', [])
+        if not partner_id or not items:
+            return {'error': 'Invalid payload'}
+
+        line_items = [self._line_item_from_payload_item(it) for it in items]
+        header_vals = {
+            'partner_id': partner_id,
+            'company_id': payload.get('company_id'),
+            'scheduled_date': payload.get('scheduled_date'),
+            'location_id': payload.get('location_id'),
+            'location_dest_id': payload.get('location_dest_id'),
+            'origin': payload.get('origin'),
+        }
+
+        try:
+            result = request.env['stock.picking'].create_delivery(header_vals, line_items)
+            return {'id': result['id'], 'name': result['name'], 'delivery_id': result['id'], 'delivery_name': result['name']}
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
+        '/api/delivery/update',
+        type='jsonrpc',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def update_delivery(self, **payload):
+        delivery_id = payload.get('id') or payload.get('delivery_id')
+        if not delivery_id:
+            return {'error': 'Invalid payload: missing id'}
+
+        header_vals = payload.get('header', {}) or {}
+        try:
+            result = request.env['stock.picking'].update_delivery(
+                delivery_id,
+                header_vals=header_vals,
+                add_line_items=payload.get('items_to_add', []) or [],
+                update_line_items=payload.get('items_to_update', []) or [],
+                remove_line_ids=payload.get('items_to_remove', []) or [],
+            )
+            return {'id': result['id'], 'name': result['name'], 'delivery_id': result['id'], 'delivery_name': result['name']}
+        except Exception as e:
+            return {'error': str(e)}
+
+    @http.route(
+        '/api/delivery/get',
+        type='jsonrpc',
+        auth='api_key',
+        methods=['POST'],
+        csrf=False,
+    )
+    def get_delivery(self, **payload):
+        delivery_id = payload.get('id') or payload.get('delivery_id')
+        delivery_name = payload.get('name') or payload.get('delivery_name')
+
+        try:
+            if delivery_id:
+                picking = request.env['stock.picking'].browse(int(delivery_id))
+                if not picking.exists():
+                    return {'error': 'Delivery slip not found'}
+            elif delivery_name:
+                pickings = request.env['stock.picking'].search([('name', '=', delivery_name)], limit=1)
+                if not pickings:
+                    return {'error': 'Delivery slip not found'}
+                picking = pickings[0]
+            else:
+                return {'error': 'Invalid payload: missing id or name'}
+
+            partner = picking.partner_id
+            scheduled_date = picking.scheduled_date.strftime('%Y-%m-%d') if picking.scheduled_date else None
+
+            return {
+                'document': {
+                    'id': picking.id,
+                    'name': picking.name,
+                    'state': picking.state,
+                    'origin': picking.origin,
+                    'scheduled_date': scheduled_date,
+                },
+                'partner': self._partner_payload(partner) if partner else None,
+                'lines': self._delivery_lines_payload(picking),
             }
         except Exception as e:
             return {'error': str(e)}

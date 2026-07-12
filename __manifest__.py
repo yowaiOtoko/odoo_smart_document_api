@@ -11,6 +11,7 @@
         'account',
         'product',
         'sale',
+        'stock',
         'web',
     ],
     'data': [
