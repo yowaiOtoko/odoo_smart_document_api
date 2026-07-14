@@ -71,16 +71,17 @@ class InvoiceAPIController(http.Controller):
         ]
 
     def _delivery_lines_payload(self, picking):
+        moves = picking.move_ids
         return [
             {
                 'id': move.id,
-                'name': move.name or '',
+                'name': move.description_picking or '',
                 'product_id': move.product_id.id,
                 'product_name': move.product_id.name or '',
-                'quantity': float(move.product_uom_qty or 0),
-                'quantity_done': float(move.quantity_done or 0),
+                'quantity': float(move.quantity or 0),
+                'quantity_done': float(move.quantity or 0),
             }
-            for move in picking.move_ids_without_package
+            for move in moves
         ]
 
     @http.route(
