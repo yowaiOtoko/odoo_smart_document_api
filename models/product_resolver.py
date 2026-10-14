@@ -10,6 +10,12 @@ class ProductResolver(models.AbstractModel):
     _description = 'Product resolver using FTS + trigram (v1.1)'
     _pg_trgm_available = None
 
+    #: ir.config_parameter key overriding the revenue account used for services.
+    SERVICE_INCOME_ACCOUNT_PARAM = 'odoo_smart_document_api.service_income_account_id'
+    #: French PCG prefix for "Ventes de prestations de services".
+    SERVICE_INCOME_ACCOUNT_CODE_PREFIX = '706'
+    _service_income_accounts = None
+
     def _trigram_available(self):
         if ProductResolver._pg_trgm_available is None:
             self.env.cr.execute(
@@ -32,6 +38,63 @@ class ProductResolver(models.AbstractModel):
         raise UserError(
             'Default UoM could not be resolved: no service product, no product, and no UoM found.'
         )
+
+    def _get_service_income_account(self, company_id):
+        """Revenue account to book services on, or an empty recordset.
+
+        Odoo takes a line's income account from its product, which falls back to
+        the product-category default. On a French chart that default is
+        707000 "Ventes de marchandises" (goods), so a *service* needs
+        706000 "Ventes de prestations de services" set explicitly. Charts that
+        have no such account simply resolve to nothing.
+        """
+        company_id = int(company_id) if company_id else self.env.company.id
+        if ProductResolver._service_income_accounts is None:
+            ProductResolver._service_income_accounts = {}
+        cache = ProductResolver._service_income_accounts
+        if company_id in cache:
+            return cache[company_id]
+
+        Account = self.env['account.account'].with_company(company_id)
+        account = Account.browse()
+        override = self.env['ir.config_parameter'].sudo().get_param(
+            self.SERVICE_INCOME_ACCOUNT_PARAM
+        )
+        if override:
+            try:
+                candidate = Account.browse(int(override)).exists()
+            except (TypeError, ValueError):
+                candidate = Account.browse()
+            if candidate and company_id in candidate.company_ids.ids:
+                account = candidate
+        if not account:
+            candidates = [
+                acc
+                for acc in Account.search([('account_type', '=', 'income')])
+                if (acc.code or '').startswith(self.SERVICE_INCOME_ACCOUNT_CODE_PREFIX)
+            ]
+            candidates.sort(key=lambda acc: acc.code)
+            if candidates:
+                account = candidates[0]
+
+        cache[company_id] = account
+        return account
+
+    def _assign_service_income_account(self, template, company_id):
+        """Book a service product on the services account when it has none.
+
+        ``template`` is a ``product.template`` (what ``resolve_or_create``
+        returns). Only products without their own income account are touched, so
+        a tenant that deliberately configured an account keeps it. Goods (consu)
+        products are left alone - the category default is already the goods
+        account.
+        """
+        template = template.with_company(company_id)
+        if template.type != 'service' or template.property_account_income_id:
+            return
+        account = self._get_service_income_account(company_id)
+        if account:
+            template.property_account_income_id = account.id
 
     def resolve_by_id(self, product_id):
         if not product_id:
@@ -213,6 +276,7 @@ class ProductResolver(models.AbstractModel):
                 name_cache=name_cache,
             )
             product = result['product']
+            self._assign_service_income_account(product, company_id)
             variant = product.product_variant_id
             out = {
                 'product_id': variant.id,
