@@ -43,6 +43,9 @@ class InvoiceAPIController(http.Controller):
             'country_id': [partner.country_id.id] if partner.country_id else None,
             'country_code': partner.country_id.code if partner.country_id else None,
             'is_company': bool(partner.is_company),
+            # SIRET (French company identifier) is stored on company_registry; the
+            # WhatsApp agent reads this payload to display the client's SIRET.
+            'company_registry': partner.company_registry or '',
         }
 
     def _invoice_lines_payload(self, move):
