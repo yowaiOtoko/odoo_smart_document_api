@@ -25,18 +25,35 @@ class ProductResolver(models.AbstractModel):
         return ProductResolver._pg_trgm_available
 
     def _get_default_uom(self):
-        Product = self.env['product.product'].with_context(active_test=True)
-        service = Product.search([('type', '=', 'service')], limit=1)
-        if service:
-            return service.uom_id
-        any_product = Product.search([], limit=1)
-        if any_product:
-            return any_product.uom_id
-        first_uom = self.env['uom.uom'].search([], limit=1)
-        if first_uom:
-            return first_uom
+        """The plain "Units" unit (UNECE C62) used for a new product.
+
+        Copying the UoM of an existing product looks harmless but is arbitrary:
+        ``uom.uom._order`` is ``factor DESC, id``, so on a database that has no
+        product yet the first record is whatever the data ranks highest (in
+        practice millimetres), and every product created afterwards inherits it
+        through the "first service product" branch. Invoices then read
+        "1 mm". What a line is counted in has to be an explicit decision, so the
+        unit category is pinned here and product data never decides it.
+        """
+        unit = self.env.ref('uom.product_uom_unit', raise_if_not_found=False)
+        if unit:
+            return unit
+
+        Unit = self.env['uom.uom'].with_context(active_test=True)
+        # Non-standard data (the xmlid was dropped): match the reference unit of
+        # the "Unit" category instead of trusting the model's default order.
+        reference = Unit.search(
+            [('category_id.name', 'in', ['Unit', 'Units']), ('uom_type', '=', 'reference')],
+            limit=1,
+        )
+        if reference:
+            return reference
+        named = Unit.search([('name', 'in', ['Unit', 'Units'])], limit=1)
+        if named:
+            return named
         raise UserError(
-            'Default UoM could not be resolved: no service product, no product, and no UoM found.'
+            'Default UoM could not be resolved: the "Units" unit (uom.product_uom_unit) '
+            'is missing from this database.'
         )
 
     def _get_service_income_account(self, company_id):
