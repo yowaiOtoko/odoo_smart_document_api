@@ -1,6 +1,6 @@
 {
     'name': 'Quotations & Invoices API (products by name or id)',
-    'version': '19.0.1.0.14',
+    'version': '19.0.1.0.15',
     'category': 'Accounting',
     'summary': 'Create quotations and invoices via API with products by name or id, fuzzy matching',
     'author': 'yowaiOtoko',
@@ -16,6 +16,7 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'data/ir_cron.xml',
     ],
     'installable': True,
     'auto_install': False,
