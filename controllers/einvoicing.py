@@ -84,6 +84,13 @@ class EinvoicingOnboardingController(http.Controller):
             company, 'fr_ctc_accredited_platform'
         ) else False
 
+        # A token appears the second the user finishes the consent, while the
+        # annuaire status is only filled by the hourly autosetup cron: without
+        # this, the agent answers "you must connect SUPER PDP" to a user who
+        # just did exactly that, and invites them to click the link again.
+        if has_token and entity_type not in ('private', 'public'):
+            entity_type = self._resolve_directory_entity_type(company)
+
         return {
             'platform': company.fr_ctc_accredited_platform if hasattr(
                 company, 'fr_ctc_accredited_platform'
@@ -95,3 +102,29 @@ class EinvoicingOnboardingController(http.Controller):
             'directory_entity_type': entity_type,
             'authorized': bool(has_token) and entity_type in ('private', 'public'),
         }
+
+    def _resolve_directory_entity_type(self, company):
+        """Look the company up in the annuaire, right now.
+
+        Same call as `smart_doc.einvoicing.autosetup` makes, run on demand
+        because this is the moment the agent needs the answer. Any failure
+        (no network, platform error) only logs: the caller then answers with
+        whatever the tenant currently holds instead of raising at the agent.
+        """
+        partner = company.partner_id
+        if not partner or not hasattr(partner, '_fr_directory_sync_logs'):
+            return partner.fr_directory_entity_type if partner else False
+
+        try:
+            with request.env.cr.savepoint():
+                partner._fr_directory_sync_logs(
+                    company, request.env._('WhatsApp agent status check')
+                )
+        except Exception as error:  # noqa: BLE001 - never break the status route
+            _logger.warning(
+                'Could not read the annuaire status of %s on demand: %s',
+                partner.display_name,
+                error,
+            )
+
+        return partner.fr_directory_entity_type
