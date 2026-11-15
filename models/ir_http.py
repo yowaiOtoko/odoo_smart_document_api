@@ -26,11 +26,20 @@ class IrHttp(models.AbstractModel):
                 company = request.env['res.company'].sudo().browse(company_id)
                 if company.exists():
                     company._smart_doc_complete_onboarding()
-        except Exception as error:  # noqa: BLE001 - never break the response
-            _logger.warning(
-                'Could not complete the FR e-invoicing onboarding after the '
-                'request: %s',
-                error,
+                else:
+                    _logger.warning(
+                        'FR e-invoicing onboarding: the session points to '
+                        'company id %s, which does not exist in this database',
+                        company_id,
+                    )
+        except Exception:  # noqa: BLE001 - never break the response
+            # exception(), not warning(): this catch is for the plumbing
+            # (session, env, browse) and a traceback is what makes it
+            # diagnosable. The onboarding itself never raises.
+            _logger.exception(
+                'FR e-invoicing onboarding: unexpected error while completing '
+                'it after the request (path %s); the response is unaffected',
+                request.httprequest.path,
             )
         super()._post_dispatch(response)
 

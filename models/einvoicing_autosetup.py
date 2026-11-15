@@ -56,7 +56,13 @@ class EinvoicingAutosetup(models.AbstractModel):
                 )
 
     @api.model
-    def _complete_company(self, company):
+    def _complete_company(self, company, origin=None):
+        """Finish the onboarding of one company.
+
+        `origin` is what the tenant's e-invoicing log and the partner chatter
+        record as the reason of the directory sync, so the trace of a sync
+        started from the OAuth callback is distinguishable from the cron's.
+        """
         if not hasattr(company, 'fr_ctc_accredited_platform'):
             return
 
@@ -87,7 +93,7 @@ class EinvoicingAutosetup(models.AbstractModel):
 
         if partner.fr_directory_entity_type not in ('private', 'public'):
             partner._fr_directory_sync_logs(
-                company, self.env._('Automatic setup')
+                company, origin or self.env._('Automatic setup')
             )
             _logger.info(
                 'FR e-invoicing directory status of %s resolved to %s',
