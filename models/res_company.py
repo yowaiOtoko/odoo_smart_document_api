@@ -6,55 +6,54 @@ _logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
-    """Complete the FR e-invoicing onboarding the moment the token lands.
+    """Complete the FR e-invoicing onboarding as soon as a token exists.
 
-    `l10n_fr_einvoicing` hands pyfrctc a `token_updater` (this method), so it is
-    called by the OAuth callback as soon as the code is exchanged — before the
-    user is even redirected back. The directory status, on the other hand, was
-    only ever resolved by the hourly `smart_doc.einvoicing.autosetup` cron, so
-    for up to an hour after a successful connection the company looked
-    unauthorized: the WhatsApp agent answered "connect SUPER PDP" to a user who
-    had just done it, and a post made in that window raised "Entity type is not
-    set on partner ...".
+    `l10n_fr_einvoicing` writes the token from its OAuth callback, and needs a
+    second fact before an invoice can be emitted: the directory status on the
+    company partner (`fr_directory_entity_type`, filled by an annuaire lookup).
+    That second fact used to come only from the hourly
+    `smart_doc.einvoicing.autosetup` cron, so for up to an hour after a
+    successful connection the company still looked unauthorized: the WhatsApp
+    agent answered "connect SUPER PDP" to a user who had just done it, and a
+    post made in that window raised "Entity type is not set on partner ...".
 
-    Calling the autosetup routine right here removes the window: the token and
-    the directory status are written by the same request. It is the same
-    idempotent code the cron runs, and it is a no-op once the status is known,
-    so the token refreshes that also come through this method cost nothing.
+    `models/ir_http.py` calls this at the end of every request whose session
+    knows the onboarding company, which includes the callback itself — the
+    token and the directory status are then written by the same request.
     """
 
     _inherit = 'res.company'
 
-    def _fr_ctc_write_token(self, new_token):
-        result = super()._fr_ctc_write_token(new_token)
-        # A refresh happening INSIDE the directory sync would come back here
-        # while the status is still empty; the flag stops that recursion.
-        if not self.env.context.get('smart_doc_einvoicing_sync'):
-            self._smart_doc_complete_onboarding()
-        return result
-
     def _smart_doc_complete_onboarding(self):
-        """Resolve what is still missing for this company to be able to emit.
+        """Resolve what is still missing for these companies to emit.
 
-        Never raises: the token is already stored at this point, and a failure
-        of the directory lookup must not turn a successful authorization into
-        an error page for the user. The hourly cron, and the status route on
-        demand, both retry.
+        No-op when the tenant has no token yet (nothing to complete) or when the
+        directory status is already known (private/public/no/private_inactive),
+        so token refreshes and ordinary page loads cost one search.
+
+        Never raises: a failing annuaire lookup must not break the page the user
+        is waiting for. The hourly cron, and the agent's status route on demand,
+        both retry.
         """
-        autosetup = self.env['smart_doc.einvoicing.autosetup'].with_context(
-            smart_doc_einvoicing_sync=True
-        )
+        if 'fr.einvoicing.token' not in self.env:
+            return
+
+        autosetup = self.env['smart_doc.einvoicing.autosetup']
         for company in self:
             partner = company.partner_id
             if not partner or partner.fr_directory_entity_type:
+                continue
+            if not self.env['fr.einvoicing.token'].sudo().search_count(
+                [('company_id', '=', company.id)]
+            ):
                 continue
             try:
                 with self.env.cr.savepoint():
                     autosetup._complete_company(company)
             except Exception as error:  # noqa: BLE001 - see the docstring
                 _logger.warning(
-                    'FR e-invoicing onboarding completion after token write '
-                    'failed for company %s: %s',
+                    'FR e-invoicing onboarding completion failed for company '
+                    '%s: %s',
                     company.display_name,
                     error,
                 )
