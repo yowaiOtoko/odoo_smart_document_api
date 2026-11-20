@@ -202,14 +202,31 @@ Route: POST /api/invoice/set_paid
 
 ## Successful responses
 
-Typical create response:
+Create responses (`/api/invoice`, `/api/quotation`) return the created document
+with the same payload as `/api/invoice/get` and `/api/quotation/get`
+(`document`, `partner`, `lines`), so no read-back call is needed. The flat
+`id`/`name` keys are kept for callers written against older versions.
 
 ```json
 {
   "id": 42,
   "name": "INV/2026/0001",
   "invoice_id": 42,
-  "invoice_name": "INV/2026/0001"
+  "invoice_name": "INV/2026/0001",
+  "document": {
+    "id": 42,
+    "name": "INV/2026/0001",
+    "state": "draft",
+    "payment_state": "not_paid",
+    "invoice_date": "2026-05-25",
+    "invoice_date_due": "2026-06-24",
+    "amount_untaxed": 280.0,
+    "amount_total": 336.0,
+    "amount_tax": 56.0,
+    "amount_residual": 336.0
+  },
+  "partner": {"id": 5, "name": "ACME", "country_code": "FR"},
+  "lines": [{"id": 77, "name": "Consulting hour", "quantity": 1, "price_unit": 80.0, "price_subtotal": 80.0}]
 }
 ```
 
